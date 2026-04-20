@@ -2,83 +2,54 @@ import os
 import sys
 from pathlib import Path
 from typing import Optional
-from PyQt6.QtGui import QGuiApplication
-from PyQt6.QtCore import Qt, QUrl
+from urllib.parse import urlparse, urlunparse
 
 
 def normalize_gameyfin_url(url_str: str) -> Optional[str]:
     """
-    Return a usable absolute URL for the embedded browser, or None if invalid.
-    Adds a scheme when missing (e.g. "host:8080" -> "http://host:8080") via QUrl.fromUserInput.
+    Return a usable absolute URL, or None if invalid.
+    Adds http:// when no scheme is provided.
     """
     s = (url_str or "").strip()
     if not s:
         return None
-    q = QUrl(s)
-    if not q.scheme():
-        q = QUrl.fromUserInput(s)
-    if not q.isValid():
+
+    if "://" not in s:
+        s = "http://" + s
+
+    parsed = urlparse(s)
+    if not parsed.scheme or not parsed.hostname:
         return None
-    if not q.host():
-        return None
-    return q.toString()
+
+    return urlunparse(parsed)
 
 
 def resource_path(relative_path: str) -> str:
-    """ Get absolute path to resource, works for dev and for PyInstaller """
+    """Get absolute path to resource, works for dev and for PyInstaller."""
     if hasattr(sys, '_MEIPASS'):
         return os.path.join(sys._MEIPASS, relative_path)
 
-    # Fallback for dev: assume relative_path is relative to the project root
-    # utils.py is in gameyfin_frontend/
     base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     return os.path.join(base_path, relative_path)
 
 
-def get_app_icon_path(custom_path: str = None, theme: str = None) -> str:
-    """
-    Returns the appropriate icon path based on the selected theme, 
-    system theme (Light/Dark), or a custom path if provided.
-    """
+def get_app_icon_path(custom_path: str = None) -> str:
+    """Returns the appropriate icon path."""
     if custom_path and os.path.exists(custom_path):
         return custom_path
-
-    icon_name = "icon.png"
-
-    # 1. Check if a qt-material theme is specified
-    if theme and theme != "auto":
-        if "light" in theme.lower():
-            icon_name = "icon_light.png"
-        else:
-            icon_name = "icon.png"
-    else:
-        # 2. Fallback to system theme detection
-        app = QGuiApplication.instance()
-        if app:
-            # Qt 6.5+ supports colorScheme detection
-            scheme = app.styleHints().colorScheme()
-            if scheme == Qt.ColorScheme.Light:
-                icon_name = "icon_light.png"
-
-    return resource_path(os.path.join("gameyfin_frontend", icon_name))
+    return resource_path(os.path.join("gameyfin_frontend", "icon.png"))
 
 
 def get_xdg_user_dir(dir_name: str) -> Path:
     """
     Finds a special XDG user directory (like DESKTOP, DOCUMENTS)
-    in a language-independent way on Linux by reading the
-    ~/.config/user-dirs.dirs file.
-
-    Args:
-        dir_name: The internal name of the directory (e.g., "DESKTOP",
-                  "DOCUMENTS", "DOWNLOAD").
+    in a language-independent way on Linux.
     """
     key_to_find = f"XDG_{dir_name.upper()}_DIR"
 
     config_home = os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")
     config_file_path = Path(config_home) / "user-dirs.dirs"
 
-    # Set a sensible fallback (e.g., $HOME/Desktop)
     fallback_dir = Path.home() / dir_name.capitalize()
 
     if not config_file_path.is_file():
@@ -94,22 +65,35 @@ def get_xdg_user_dir(dir_name: str) -> Path:
 
                 if line.startswith(key_to_find):
                     try:
-                        # Line looks like: XDG_DESKTOP_DIR="$HOME/Desktop"
                         value = line.split("=", 1)[1]
                         value = value.strip('"')
-
-                        # Expand variables like $HOME
                         path = os.path.expandvars(value)
-
                         return Path(path)
-
                     except Exception:
-                        # Found the key but the line was malformed
                         return fallback_dir
 
     except Exception as e:
         print(f"Error reading {config_file_path}: {e}")
         return fallback_dir
 
-    # Key wasn't found in the file
     return fallback_dir
+
+
+def format_size(nbytes: int) -> str:
+    if nbytes >= 1024 ** 3: return f"{nbytes / 1024 ** 3:.2f} GB"
+    if nbytes >= 1024 ** 2: return f"{nbytes / 1024 ** 2:.2f} MB"
+    if nbytes >= 1024: return f"{nbytes / 1024:.2f} KB"
+    return f"{nbytes} B"
+
+
+def open_path(path: str):
+    """Open a file or folder with the system's default handler."""
+    import subprocess
+    import platform
+    system = platform.system()
+    if system == "Windows":
+        os.startfile(path)
+    elif system == "Darwin":
+        subprocess.Popen(["open", path])
+    else:
+        subprocess.Popen(["xdg-open", path])

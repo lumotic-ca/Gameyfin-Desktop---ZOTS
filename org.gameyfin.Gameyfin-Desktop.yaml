@@ -1,9 +1,7 @@
 app-id: org.gameyfin.Gameyfin-Desktop
-runtime: org.kde.Platform
-runtime-version: '6.10'
-sdk: org.kde.Sdk
-base: com.riverbankcomputing.PyQt.BaseApp
-base-version: '6.10'
+runtime: org.gnome.Platform
+runtime-version: '48'
+sdk: org.gnome.Sdk
 command: gameyfin-desktop
 separate-locales: false
 
@@ -50,7 +48,6 @@ finish-args:
   # Standard Path setup
   - --env=PATH=/app/bin:/app/utils/bin:/usr/bin:/app/lib/extensions/vulkan/MangoHud/bin:/app/lib/i386-linux-gnu/extensions/vulkan/MangoHud/bin
   - --env=SteamVirtualGamepadInfo=
-  - --env=QTWEBENGINEPROCESS_PATH=/app/bin/QtWebEngineProcess
 
 add-extensions:
   org.freedesktop.Platform.VulkanLayer.MangoHud.i386:
@@ -99,6 +96,8 @@ modules:
       # FIX: amdgpu hardware ID silence
       - mkdir -p /app/lib/i386-linux-gnu/GL/default/share/libdrm
       - touch /app/lib/i386-linux-gnu/GL/default/share/libdrm/amdgpu.ids
+
+  # --- WebKitGTK is provided by the GNOME runtime ---
 
   # --- Tools for Winetricks ---
   - name: 7zip
@@ -172,7 +171,7 @@ modules:
     build-commands:
       - mkdir -p /app/share/gameyfin
       - cp -r gameyfin_frontend /app/share/gameyfin/
-      - cp gameyfin_qt.py /app/share/gameyfin/
+      - cp gameyfin_app.py /app/share/gameyfin/
       - mkdir -p /app/bin
       - install -m 755 gameyfin-desktop.sh /app/bin/gameyfin-desktop
       - mkdir -p /app/share/applications

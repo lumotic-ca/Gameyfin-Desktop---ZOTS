@@ -115,26 +115,86 @@
       ]
     },
     {
-      "name": "python3-qt-material",
+      "name": "python3-platformdirs",
       "buildsystem": "simple",
       "build-commands": [
-        "pip3 install --verbose --exists-action=i --no-index --find-links=\"file://${PWD}\" --prefix=${FLATPAK_DEST} \"qt-material==2.17\" --no-build-isolation --ignore-installed"
+        "pip3 install --verbose --exists-action=i --no-index --find-links=\"file://${PWD}\" --prefix=${FLATPAK_DEST} \"platformdirs>=4.0\" --no-build-isolation"
       ],
       "sources": [
         {
           "type": "file",
-          "url": "https://files.pythonhosted.org/packages/df/bf/f7da0350254c0ed7c72f3e33cef02e048281fec7ecec5f032d4aac52226b/jinja2-3.1.6.tar.gz",
-          "sha256": "0137fb05990d35f1275a587e9aee6d56da821fc83491a0fb838183be43f66d6d"
-        },
+          "url": "https://files.pythonhosted.org/packages/6d/45/59578566b3275ce4eb3f69d73de0e57e7d5b81bc1c0791d5e07a2a0e4236/platformdirs-4.3.7-py3-none-any.whl",
+          "sha256": "a03875334331946f13c549dbd8f4bac7a13a50a895a0eb1e8c6a8ace80d40a0a"
+        }
+      ]
+    },
+    {
+      "name": "python3-bottle",
+      "buildsystem": "simple",
+      "build-commands": [
+        "pip3 install --verbose --exists-action=i --no-index --find-links=\"file://${PWD}\" --prefix=${FLATPAK_DEST} \"bottle>=0.13\" --no-build-isolation"
+      ],
+      "sources": [
         {
           "type": "file",
-          "url": "https://files.pythonhosted.org/packages/7e/99/7690b6d4034fffd95959cbe0c02de8deb3098cc577c67bb6a24fe5d7caa7/markupsafe-3.0.3.tar.gz",
-          "sha256": "722695808f4b6457b320fdc131280796bdceb04ab50fe1795cd540799ebe1698"
-        },
+          "url": "https://files.pythonhosted.org/packages/6c/2d/9b0811bd2274210e2e9edec9ec1d3ddd6965c2e9cae0e0f33651b7f0c0b9/bottle-0.13.4.tar.gz",
+          "sha256": "6e8b63f1818b4bcf429b7b62b80e5a11e5f2e41a5521e79a10a5b8dfe7dcb4f8"
+        }
+      ]
+    },
+    {
+      "name": "python3-proxy-tools",
+      "buildsystem": "simple",
+      "build-commands": [
+        "pip3 install --verbose --exists-action=i --no-index --find-links=\"file://${PWD}\" --prefix=${FLATPAK_DEST} \"proxy_tools>=0.1\" --no-build-isolation"
+      ],
+      "sources": [
         {
           "type": "file",
-          "url": "https://files.pythonhosted.org/packages/3a/57/d6473fc7f9b1a81f6bddea555119270818c54be7717f38d0977bb6161408/qt_material-2.17.tar.gz",
-          "sha256": "b500a0c1f5ef8f46a8cf037d1aa5bdf9ea4eb618180b6332539dfbdd0647ad0d"
+          "url": "https://files.pythonhosted.org/packages/0e/78/58021e5a8e89ac6b8ebf1c1d92d2700a95c9c3d340a21fa9a9ed7f45e3ce/proxy_tools-0.1.0.tar.gz",
+          "sha256": "50168f8c38c267d60b43daebf58d29ddf0ef06dd7e8daa2afcb2e8f0e47f8a0a"
+        }
+      ]
+    },
+    {
+      "name": "python3-pywebview",
+      "buildsystem": "simple",
+      "build-commands": [
+        "pip3 install --verbose --exists-action=i --no-index --find-links=\"file://${PWD}\" --prefix=${FLATPAK_DEST} \"pywebview>=5.0\" --no-build-isolation"
+      ],
+      "sources": [
+        {
+          "type": "file",
+          "url": "https://files.pythonhosted.org/packages/4d/72/dd7f6b2c3e84af9fd15bf43c9b34bc0f67e77fc42cff5e04d1dfe2fe0e38/pywebview-6.2.1-py3-none-any.whl",
+          "sha256": "d7a9aca0df6dabb5c4e9bf74b4f9cbed5cad50e3d2825d60547c1f87ae79ad22"
+        }
+      ]
+    },
+    {
+      "name": "python3-pillow",
+      "buildsystem": "simple",
+      "build-commands": [
+        "pip3 install --verbose --exists-action=i --no-index --find-links=\"file://${PWD}\" --prefix=${FLATPAK_DEST} \"Pillow>=10.0\" --no-build-isolation"
+      ],
+      "sources": [
+        {
+          "type": "file",
+          "url": "https://files.pythonhosted.org/packages/b7/ad/71982d18fd28ed1f93c31b8648f980ebdbdb8a2a64f480f0e727b6d9e4c0/pillow-11.2.1.tar.gz",
+          "sha256": "a64dd61998416367b7ef979b73d3a85853ba9bec4c2925f74e588879a58716b6"
+        }
+      ]
+    },
+    {
+      "name": "python3-pystray",
+      "buildsystem": "simple",
+      "build-commands": [
+        "pip3 install --verbose --exists-action=i --no-index --find-links=\"file://${PWD}\" --prefix=${FLATPAK_DEST} \"pystray>=0.19\" --no-build-isolation"
+      ],
+      "sources": [
+        {
+          "type": "file",
+          "url": "https://files.pythonhosted.org/packages/c3/f5/10c340ee9e7b4f28bf44e3bef3bfb4c10d3ad5033b78be55bbab91ca3a8b/pystray-0.19.5-py2.py3-none-any.whl",
+          "sha256": "a563d8f6149b3b7b1209b75614633b96790c2e8a7e84cdd9e9b0a42a3f0abe63"
         }
       ]
     }

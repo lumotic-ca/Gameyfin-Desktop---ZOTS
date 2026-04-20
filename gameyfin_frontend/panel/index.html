@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gameyfin - Panel</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="tab-bar">
+  <button class="tab-btn active" data-tab="downloads">Downloads</button>
+  <button class="tab-btn linux-only" data-tab="prefixes">Prefixes</button>
+  <button class="tab-btn" data-tab="settings">Settings</button>
+</div>
+
+<!-- ═══════════════════════ DOWNLOADS ═══════════════════════ -->
+<div id="downloads" class="panel active">
+  <div id="downloads-list"></div>
+  <div id="downloads-empty" class="empty-state" style="display:none;">
+    <h3>No Downloads</h3>
+    <p>Downloads from Gameyfin will appear here.</p>
+  </div>
+</div>
+
+<!-- ═══════════════════════ PREFIXES ═══════════════════════ -->
+<div id="prefixes" class="panel">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+    <h2 class="section-title" style="margin-bottom:0;">Installed Games</h2>
+    <button class="btn btn-sm" onclick="loadPrefixes()">Refresh</button>
+  </div>
+  <div id="prefixes-list"></div>
+  <div id="prefixes-empty" class="empty-state" style="display:none;">
+    <h3>No Prefixes</h3>
+    <p>Wine prefixes created during installations will appear here.</p>
+  </div>
+</div>
+
+<!-- ═══════════════════════ SETTINGS ═══════════════════════ -->
+<div id="settings" class="panel">
+  <h2 class="section-title">Settings</h2>
+
+  <div class="form-group">
+    <label class="form-label" for="s-url">Gameyfin URL</label>
+    <input class="form-input" id="s-url" type="text" placeholder="http://localhost:8080">
+  </div>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label class="form-label" for="s-width">Window Width</label>
+      <input class="form-input" id="s-width" type="number" min="800" max="3840">
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="s-height">Window Height</label>
+      <input class="form-input" id="s-height" type="number" min="600" max="2160">
+    </div>
+  </div>
+
+  <div class="form-group">
+    <label class="form-label" for="s-download-dir">Default Download Directory</label>
+    <div class="form-row">
+      <div class="form-group" style="margin-bottom:0;">
+        <input class="form-input" id="s-download-dir" type="text" readonly>
+      </div>
+      <button class="btn" onclick="browseDir('s-download-dir')">Browse</button>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <label class="form-label" for="s-unzip-dir">Default Unzip Directory</label>
+    <div class="form-row">
+      <div class="form-group" style="margin-bottom:0;">
+        <input class="form-input" id="s-unzip-dir" type="text" placeholder="(same as ZIP file)" readonly>
+      </div>
+      <button class="btn" onclick="browseDir('s-unzip-dir')">Browse</button>
+    </div>
+  </div>
+
+  <div class="form-group linux-only">
+    <label class="form-label" for="s-proton">Proton Path</label>
+    <input class="form-input" id="s-proton" type="text" placeholder="GE-Proton">
+  </div>
+
+  <div class="form-group linux-only">
+    <label class="form-label" for="s-umu-api">UMU API URL</label>
+    <input class="form-input" id="s-umu-api" type="text">
+  </div>
+
+  <div class="form-group">
+    <label class="form-label">
+      <input type="checkbox" id="s-minimized"> Start Minimized
+    </label>
+  </div>
+
+  <div class="form-group">
+    <label class="form-label">
+      <input type="checkbox" id="s-prompt-unzip"> Always Prompt for Unzip Directory
+    </label>
+  </div>
+
+  <button class="btn btn-accent" onclick="saveSettings()">Save &amp; Apply</button>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,6 +1,7 @@
 import os
 import json
-from PyQt6.QtCore import QStandardPaths
+from platformdirs import user_data_dir
+
 
 class SettingsManager:
     _instance = None
@@ -14,11 +15,13 @@ class SettingsManager:
     def __init__(self):
         if self._initialized:
             return
-        
-        self.settings_dir = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation)
+
+        self.settings_dir = user_data_dir("Gameyfin", "Gameyfin")
         os.makedirs(self.settings_dir, exist_ok=True)
         self.settings_file = os.path.join(self.settings_dir, "settings.json")
-        
+
+        default_download_dir = os.path.join(os.path.expanduser("~"), "Downloads")
+
         self.defaults = {
             "GF_URL": "http://localhost:8080",
             "GF_WINDOW_WIDTH": 1420,
@@ -29,11 +32,11 @@ class SettingsManager:
             "GF_UMU_API_URL": "https://umu.openwinecomponents.org/umu_api.php",
             "GF_UMU_DB_STORES": ["none", "gog", "amazon", "battlenet", "ea", "egs", "epic", "humble", "itchio", "origin", "steam", "uplay", "ubisoft"],
             "GF_THEME": "auto",
-            "GF_DEFAULT_DOWNLOAD_DIR": QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DownloadLocation),
+            "GF_DEFAULT_DOWNLOAD_DIR": default_download_dir,
             "GF_DEFAULT_UNZIP_DIR": "",
             "GF_PROMPT_UNZIP_DIR": 0
         }
-        
+
         self.settings = self.defaults.copy()
         self.load()
         self._initialized = True
@@ -55,24 +58,31 @@ class SettingsManager:
             print(f"Error saving settings: {e}")
 
     def get(self, key, fallback=None):
-        # Allow override by environment variables for backward compatibility/debugging
         env_val = os.getenv(key)
         if env_val is not None:
-            # Try to convert to int if it looks like one and default is int
             if isinstance(self.defaults.get(key), int):
                 try: return int(env_val)
                 except: pass
             return env_val
-        
+
         val = self.settings.get(key)
         if (val is None or val == "") and fallback:
             return fallback
-            
+
         return val if val is not None else self.defaults.get(key)
 
     def set(self, key, value):
         self.settings[key] = value
         self.save()
 
-# Global instance
+    def get_all(self) -> dict:
+        return {k: self.get(k) for k in self.defaults}
+
+    def set_many(self, data: dict):
+        for k, v in data.items():
+            if k in self.defaults:
+                self.settings[k] = v
+        self.save()
+
+
 settings_manager = SettingsManager()

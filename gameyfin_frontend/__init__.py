@@ -1,3 +1,3 @@
-from .gameyfin_tray import GameyfinTray
-from .gameyfin_window import GameyfinWindow
-from gameyfin_frontend.widgets.download_manager import DownloadManagerWidget
+from .bridge import GFBridge
+from .tray import GameyfinTray
+from .download_engine import DownloadEngine
