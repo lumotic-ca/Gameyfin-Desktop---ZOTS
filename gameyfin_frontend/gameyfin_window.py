@@ -4,6 +4,7 @@ from PyQt6.QtWidgets import QMainWindow, QFileDialog, QTabWidget, QApplication, 
 from PyQt6.QtGui import QCloseEvent, QIcon, QDesktopServices
 from PyQt6.QtWebEngineWidgets import QWebEngineView
 from PyQt6.QtCore import QUrl, QStandardPaths, pyqtSignal, Qt
+from PyQt6.QtGui import QColor
 from PyQt6.QtWebEngineCore import (QWebEngineScript,
                                    QWebEngineDownloadRequest, QWebEngineProfile, QWebEngineSettings, QWebEnginePage)
 
@@ -108,6 +109,9 @@ class GameyfinWindow(QMainWindow):
         settings.setAttribute(QWebEngineSettings.WebAttribute.DnsPrefetchEnabled, False)
 
         self.browser = QWebEngineView()
+        # Prevent Qt from painting a background over the webview before Chromium
+        # fills it in — eliminates white/color flashes on tab switch and navigation.
+        self.browser.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, True)
         url_raw = settings_manager.get("GF_URL")
         normalized = normalize_gameyfin_url(url_raw) if url_raw else None
         base_url = QUrl(normalized or url_raw or "")
@@ -120,6 +124,14 @@ class GameyfinWindow(QMainWindow):
         
         self.browser.setPage(self.custom_page)
         self.browser.setUrl(base_url)
+
+        # Match the pre-load background to the app theme so no colour flash
+        # appears while Chromium is compositing its first frame.
+        theme = settings_manager.get("GF_THEME") or "auto"
+        if theme != "auto" and "light" not in theme.lower():
+            self.custom_page.setBackgroundColor(QColor(18, 18, 18))
+        else:
+            self.custom_page.setBackgroundColor(QColor(255, 255, 255))
 
         self.download_manager = DownloadManagerWidget(profile_path, umu_database, self)
         self.prefix_manager = PrefixManagerWidget(umu_database, self)
@@ -171,7 +183,10 @@ class GameyfinWindow(QMainWindow):
         """)
         script.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentReady)
         script.setWorldId(QWebEngineScript.ScriptWorldId.MainWorld)
-        script.setRunsOnSubFrames(True)
+        # Run on main frame only — firing this inside every iframe forces a style
+        # recalculation on each sub-frame load and causes visible repaints in the
+        # main frame, producing the periodic flickering on the Gameyfin page.
+        script.setRunsOnSubFrames(False)
         self.browser.page().scripts().insert(script)
 
     def close_tab(self, index):
@@ -400,3 +415,11 @@ class GameyfinWindow(QMainWindow):
                 app.setFont(app.default_font)
             if hasattr(app, 'default_style_name'):
                 app.setStyle(app.default_style_name)
+
+        # Keep pre-load background colour in sync with the new theme so there
+        # is no colour mismatch flash after a theme change + reload.
+        active_theme = settings_manager.get("GF_THEME") or "auto"
+        if active_theme != "auto" and "light" not in active_theme.lower():
+            self.custom_page.setBackgroundColor(QColor(18, 18, 18))
+        else:
+            self.custom_page.setBackgroundColor(QColor(255, 255, 255))

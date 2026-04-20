@@ -16,8 +16,17 @@ from gameyfin_frontend.settings import settings_manager
 
 load_dotenv()
 
-# Disable Web Security to bypass CORS issues with Authentik redirect
-os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = "--disable-web-security"
+# Chromium flags for the embedded WebEngine renderer.
+# --disable-web-security     : bypasses CORS for Authentik / SSO redirects.
+# --disable-gpu-vsync        : prevents stutter caused by the WebEngine vsync
+#                              cycle drifting out of sync with the OS compositor,
+#                              which manifests as periodic flickering on Windows.
+# --enable-smooth-scrolling  : smoother scroll frame pacing inside the webview.
+os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = (
+    "--disable-web-security "
+    "--disable-gpu-vsync "
+    "--enable-smooth-scrolling"
+)
 
 if __name__ == "__main__":
 
