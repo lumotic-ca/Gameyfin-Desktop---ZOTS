@@ -63,10 +63,9 @@ DOWNLOAD_INTERCEPT_JS = """
         var absUrl = _gfAbsUrl(url);
         var fname = _gfFilenameFromUrl(absUrl);
         if (window.pywebview && window.pywebview.api) {
+            // Navigation to the Downloads tab is handled inside bridge.start_download()
+            // AFTER cookies are captured, so we do NOT navigate here.
             window.pywebview.api.start_download(absUrl, fname);
-            if (window.pywebview.api.navigate_main_to_panel) {
-                window.pywebview.api.navigate_main_to_panel('downloads');
-            }
         }
     }
 

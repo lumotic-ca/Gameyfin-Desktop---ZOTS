@@ -94,8 +94,15 @@ class DownloadEngine:
     def start_download(self, url: str, save_path: str,
                        on_progress: Optional[Callable] = None,
                        on_complete: Optional[Callable] = None,
-                       on_error: Optional[Callable] = None) -> str:
-        """Start a file download. Returns a unique download ID."""
+                       on_error: Optional[Callable] = None,
+                       cookies: Optional[list] = None) -> str:
+        """Start a file download. Returns a unique download ID.
+
+        ``cookies`` is an optional pre-captured list of cookie dicts
+        (``{"name": ..., "value": ..., "domain": ...}``).  When supplied the
+        download thread uses them directly, bypassing the lazy ``get_cookies_fn``
+        call that would otherwise race with any window navigation.
+        """
         dl_id = str(uuid.uuid4())[:8]
 
         record = {
@@ -120,6 +127,7 @@ class DownloadEngine:
             record=record,
             engine=self,
             get_cookies_fn=self._get_cookies,
+            prefetched_cookies=cookies,
             on_progress=on_progress,
             on_complete=on_complete,
             on_error=on_error,
@@ -147,11 +155,13 @@ class DownloadEngine:
 
 class _ActiveDownload:
     def __init__(self, dl_id: str, record: dict, engine: DownloadEngine,
-                 get_cookies_fn, on_progress, on_complete, on_error):
+                 get_cookies_fn, on_progress, on_complete, on_error,
+                 prefetched_cookies: Optional[list] = None):
         self.dl_id = dl_id
         self.record = record
         self.engine = engine
         self._get_cookies = get_cookies_fn
+        self._prefetched_cookies = prefetched_cookies
         self._on_progress = on_progress
         self._on_complete = on_complete
         self._on_error = on_error
@@ -169,21 +179,25 @@ class _ActiveDownload:
 
     def _build_session(self) -> requests.Session:
         session = requests.Session()
-        if self._get_cookies:
+        # Prefer pre-captured cookies (grabbed before window navigation) to avoid
+        # the race condition where get_cookies() runs after the window has moved to
+        # a file:// URL and returns an empty list.
+        cookie_list = self._prefetched_cookies
+        if cookie_list is None and self._get_cookies:
             try:
-                cookies = self._get_cookies()
-                if cookies:
-                    for c in cookies:
-                        name = c.get("name", "")
-                        value = c.get("value", "")
-                        domain = c.get("domain", "")
-                        if name and value:
-                            if domain:
-                                session.cookies.set(name, value, domain=domain)
-                            else:
-                                session.cookies.set(name, value)
+                cookie_list = self._get_cookies()
             except Exception as e:
                 print(f"Warning: could not extract cookies: {e}")
+        for c in (cookie_list or []):
+            name = c.get("name", "")
+            value = c.get("value", "")
+            domain = c.get("domain", "")
+            if name and value:
+                if domain:
+                    session.cookies.set(name, value, domain=domain)
+                else:
+                    session.cookies.set(name, value)
+        print(f"[download] session built with {len(session.cookies)} cookie(s)")
         return session
 
     def _run(self):

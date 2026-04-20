@@ -127,6 +127,25 @@ class GFBridge:
 
     # ── Downloads ─────────────────────────────────────────────────────
 
+    def _capture_cookies(self) -> list:
+        """Synchronously capture cookies from the main window's current origin."""
+        if not self._main_window:
+            return []
+        try:
+            raw = self._main_window.get_cookies() or []
+            result = []
+            for c in raw:
+                name  = getattr(c, "name",  None) or (c.get("name",  "") if isinstance(c, dict) else "")
+                value = getattr(c, "value", None) or (c.get("value", "") if isinstance(c, dict) else "")
+                domain = getattr(c, "domain", "") or (c.get("domain", "") if isinstance(c, dict) else "")
+                if name and value:
+                    result.append({"name": name, "value": value, "domain": domain})
+            print(f"[bridge] captured {len(result)} cookies for download")
+            return result
+        except Exception as e:
+            print(f"[bridge] cookie capture failed: {e}")
+            return []
+
     def get_downloads(self) -> str:
         records = self._download_engine.get_records()
         return json.dumps(records)
@@ -134,40 +153,55 @@ class GFBridge:
     def start_download(self, url: str, filename: str = "") -> str:
         """
         Called from the main window JS when a /download/ link is intercepted.
-        Also callable from panel UI to re-download.
+        Cookies are captured BEFORE the window navigates away, then the download
+        thread uses the pre-captured cookie list so it never races with the navigation.
         """
+        # 1. Capture cookies NOW — the main window is still on the Gameyfin origin.
+        #    get_cookies() is scoped to the current page, so we must do this before
+        #    navigate_main_to_panel() changes the URL to file://.
+        captured_cookies = self._capture_cookies()
+
+        # 2. Derive a provisional filename; server Content-Disposition will override it.
         if not filename:
             from urllib.parse import urlparse, unquote
-            path = urlparse(url).path
-            filename = unquote(os.path.basename(path)) or "download"
+            filename = unquote(os.path.basename(urlparse(url).path)) or "download"
 
         download_dir = settings_manager.get("GF_DEFAULT_DOWNLOAD_DIR") or os.path.expanduser("~/Downloads")
         os.makedirs(download_dir, exist_ok=True)
         save_path = os.path.join(download_dir, filename)
 
+        # 3. Route callbacks to main_window — it will be showing the Downloads tab.
         def on_progress(dl_id, received, total):
             pct = int((received / total) * 100) if total > 0 else 0
-            if self._panel_window:
-                self._panel_window.evaluate_js(
+            if self._main_window:
+                self._main_window.evaluate_js(
                     f'if(window._onDownloadProgress) window._onDownloadProgress("{dl_id}",{received},{total},{pct})'
                 )
 
         def on_complete(dl_id):
-            if self._panel_window:
-                self._panel_window.evaluate_js(
+            if self._main_window:
+                self._main_window.evaluate_js(
                     f'if(window._onDownloadComplete) window._onDownloadComplete("{dl_id}")'
                 )
 
         def on_error(dl_id, msg):
-            if self._panel_window:
-                safe_msg = msg.replace("\\", "\\\\").replace('"', '\\"')
-                self._panel_window.evaluate_js(
+            if self._main_window:
+                safe_msg = msg.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
+                self._main_window.evaluate_js(
                     f'if(window._onDownloadError) window._onDownloadError("{dl_id}","{safe_msg}")'
                 )
 
+        # 4. Start the download with pre-captured cookies (no thread-timing dependency).
         dl_id = self._download_engine.start_download(
-            url, save_path, on_progress=on_progress, on_complete=on_complete, on_error=on_error
+            url, save_path,
+            cookies=captured_cookies,
+            on_progress=on_progress,
+            on_complete=on_complete,
+            on_error=on_error,
         )
+
+        # 5. Navigate to the Downloads tab AFTER cookies are safely in the thread.
+        self.navigate_main_to_panel('downloads')
         return json.dumps({"ok": True, "id": dl_id, "path": save_path})
 
     def cancel_download(self, dl_id: str):
