@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gameyfin — Connect to server</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .setup-wrap { max-width: 520px; margin: 0 auto; padding: 32px 24px 48px; }
+    .setup-wrap h1 { font-size: 1.35rem; font-weight: 600; margin-bottom: 8px; }
+    .setup-wrap .lead { color: var(--text-dim); font-size: 0.95rem; margin-bottom: 24px; line-height: 1.55; }
+    .setup-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; align-items: center; }
+    .err { color: var(--danger); font-size: 0.875rem; margin-top: 10px; min-height: 1.25em; }
+    .hint { font-size: 0.8rem; color: var(--text-dim); margin-top: 8px; }
+    body { overflow: auto; height: auto; min-height: 100%; }
+  </style>
+</head>
+<body>
+<main class="setup-wrap">
+  <h1>Connect to your Gameyfin server</h1>
+  <p class="lead">Enter the URL where Gameyfin is running (same address you use in a browser). You can change this anytime from the tray menu or the Downloads / Settings panel.</p>
+
+  <form id="setup-form" action="#" method="get">
+    <div class="form-group">
+      <label class="form-label" for="server-url">Server URL</label>
+      <input class="form-input" id="server-url" name="server-url" type="text" autocomplete="url" spellcheck="false" required placeholder="https://gameyfin.example.com or http://192.168.1.10:8080" aria-describedby="url-hint">
+      <p id="url-hint" class="hint">Include <kbd>http://</kbd> or <kbd>https://</kbd>. If you omit the scheme, <kbd>http://</kbd> is added.</p>
+    </div>
+    <div class="setup-actions">
+      <button type="submit" class="btn btn-accent" id="btn-connect">Connect</button>
+      <button type="button" class="btn" id="btn-panel">Downloads &amp; settings</button>
+    </div>
+    <div id="err" class="err" role="alert" aria-live="polite"></div>
+  </form>
+</main>
+<script src="setup.js"></script>
+</body>
+</html>

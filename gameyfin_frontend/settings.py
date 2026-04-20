@@ -24,6 +24,8 @@ class SettingsManager:
 
         self.defaults = {
             "GF_URL": "http://localhost:8080",
+            # 0 = show server setup in main window before loading Gameyfin; 1 = open GF_URL directly.
+            "GF_SERVER_CONFIGURED": 0,
             "GF_WINDOW_WIDTH": 1420,
             "GF_WINDOW_HEIGHT": 940,
             "GF_START_MINIMIZED": 0,
@@ -46,7 +48,18 @@ class SettingsManager:
             try:
                 with open(self.settings_file, "r") as f:
                     loaded_settings = json.load(f)
+                    had_server_flag = "GF_SERVER_CONFIGURED" in loaded_settings
                     self.settings.update(loaded_settings)
+                    # Older installs had no flag: if they already set a non-default URL, skip onboarding once.
+                    if not had_server_flag:
+                        url = (self.settings.get("GF_URL") or "").strip().rstrip("/").lower()
+                        default_urls = {
+                            "http://localhost:8080",
+                            "http://127.0.0.1:8080",
+                        }
+                        if url and url not in default_urls:
+                            self.settings["GF_SERVER_CONFIGURED"] = 1
+                            self.save()
             except Exception as e:
                 print(f"Error loading settings: {e}")
 

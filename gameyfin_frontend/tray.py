@@ -3,7 +3,6 @@ pystray-based system tray for Gameyfin Desktop.
 Runs on a background thread so it does not block the pywebview main loop.
 """
 
-import sys
 import threading
 from typing import Optional
 
@@ -15,10 +14,11 @@ from .settings import settings_manager
 
 
 class GameyfinTray:
-    def __init__(self, main_window, panel_window, quit_callback):
+    def __init__(self, main_window, panel_window, quit_callback, on_change_server=None):
         self._main_window = main_window
         self._panel_window = panel_window
         self._quit_callback = quit_callback
+        self._on_change_server = on_change_server
         self._icon: Optional[pystray.Icon] = None
         self._thread: Optional[threading.Thread] = None
 
@@ -33,12 +33,17 @@ class GameyfinTray:
         except Exception:
             image = Image.new("RGB", (64, 64), color=(30, 30, 30))
 
-        menu = pystray.Menu(
+        items = [
             pystray.MenuItem("Gameyfin", self._show_main, default=True),
             pystray.MenuItem("Downloads / Settings", self._show_panel),
+        ]
+        if self._on_change_server:
+            items.append(pystray.MenuItem("Connect to server…", self._change_server))
+        items.extend([
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Quit", self._quit),
-        )
+        ])
+        menu = pystray.Menu(*items)
 
         self._icon = pystray.Icon("gameyfin", image, "Gameyfin", menu)
         self._icon.run()
@@ -50,6 +55,12 @@ class GameyfinTray:
     def _show_panel(self, _icon=None, _item=None):
         if self._panel_window:
             self._panel_window.show()
+
+    def _change_server(self, _icon=None, _item=None):
+        if self._on_change_server:
+            self._on_change_server()
+        if self._main_window:
+            self._main_window.show()
 
     def _quit(self, _icon=None, _item=None):
         if self._icon:

@@ -6,7 +6,6 @@ All public methods are callable from JS via window.pywebview.api.<method>().
 import json
 import os
 import sys
-import threading
 
 import webview
 
@@ -16,17 +15,25 @@ from .workers import UnzipWorker
 from .umu_database import UmuDatabase
 from . import prefix_manager
 from . import dialogs
-from .utils import format_size, normalize_gameyfin_url, open_path
+from .utils import normalize_gameyfin_url, open_path, resource_path
 
 
 class GFBridge:
     """Exposed to JS as window.pywebview.api."""
 
-    def __init__(self, main_window, panel_window, download_engine: DownloadEngine, umu_database: UmuDatabase):
+    def __init__(
+        self,
+        main_window,
+        panel_window,
+        download_engine: DownloadEngine,
+        umu_database: UmuDatabase,
+        on_gameyfin_navigation=None,
+    ):
         self._main_window = main_window
         self._panel_window = panel_window
         self._download_engine = download_engine
         self._umu_database = umu_database
+        self._on_gameyfin_navigation = on_gameyfin_navigation
         self._unzip_workers: dict[str, UnzipWorker] = {}
 
     # ── Platform ──────────────────────────────────────────────────────
@@ -48,13 +55,42 @@ class GFBridge:
                 if not normalized:
                     return json.dumps({"ok": False, "error": "Invalid URL"})
                 data["GF_URL"] = normalized
+                data["GF_SERVER_CONFIGURED"] = 1
             settings_manager.set_many(data)
             if self._main_window:
                 new_url = settings_manager.get("GF_URL")
+                if self._on_gameyfin_navigation and new_url:
+                    self._on_gameyfin_navigation(True)
                 self._main_window.load_url(new_url)
             return json.dumps({"ok": True})
         except Exception as e:
             return json.dumps({"ok": False, "error": str(e)})
+
+    def complete_server_setup(self, url: str) -> str:
+        """Validate URL, save, mark onboarding done, load Gameyfin in the main window."""
+        normalized = normalize_gameyfin_url((url or "").strip())
+        if not normalized:
+            return json.dumps({
+                "ok": False,
+                "error": "Enter a valid URL with a host, e.g. https://gameyfin.home or http://192.168.1.10:8080",
+            })
+        settings_manager.set("GF_URL", normalized)
+        settings_manager.set("GF_SERVER_CONFIGURED", 1)
+        if self._on_gameyfin_navigation:
+            self._on_gameyfin_navigation(True)
+        if self._main_window:
+            self._main_window.load_url(normalized)
+        return json.dumps({"ok": True, "url": normalized})
+
+    def show_server_setup(self) -> str:
+        """Open the local setup page in the main window (change server / fix connection)."""
+        path = resource_path(os.path.join("gameyfin_frontend", "panel", "setup.html"))
+        setup_url = f"file:///{path}" if sys.platform == "win32" else f"file://{path}"
+        if self._on_gameyfin_navigation:
+            self._on_gameyfin_navigation(False)
+        if self._main_window:
+            self._main_window.load_url(setup_url)
+        return json.dumps({"ok": True})
 
     # ── Downloads ─────────────────────────────────────────────────────
 

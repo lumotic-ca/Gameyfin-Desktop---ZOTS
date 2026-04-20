@@ -234,6 +234,13 @@ async function loadSettings() {
   } catch (e) { console.error("loadSettings", e); }
 }
 
+async function openServerSetup() {
+  const a = api();
+  if (!a || !a.show_server_setup) return;
+  await a.show_server_setup();
+  if (a.show_main) await a.show_main();
+}
+
 async function saveSettings() {
   const a = api(); if (!a) return;
   const data = {
