@@ -22,14 +22,40 @@ function toast(msg, duration) {
 
 /* ── Tab switching ────────────────────────────────────────────────── */
 
+function activateTab(tabId, updateHash) {
+  if (!tabId) return;
+  if (tabId === "gameyfin") return;
+
+  const btn = document.querySelector(`.tab-btn[data-tab="${tabId}"]`);
+  const panel = document.getElementById(tabId);
+  if (!btn || !panel) return;
+
+  document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+  document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
+  btn.classList.add("active");
+  panel.classList.add("active");
+  if (updateHash) {
+    try { window.location.hash = "#" + tabId; } catch (_) {}
+  }
+}
+
 document.querySelectorAll(".tab-btn").forEach(btn => {
   btn.addEventListener("click", () => {
-    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
-    document.querySelectorAll(".panel").forEach(p => p.classList.remove("active"));
-    btn.classList.add("active");
-    document.getElementById(btn.dataset.tab).classList.add("active");
+    activateTab(btn.dataset.tab, true);
   });
 });
+
+window.addEventListener("hashchange", () => {
+  const h = (window.location.hash || "").replace("#", "").trim().toLowerCase();
+  if (h) activateTab(h, false);
+});
+
+async function goGameyfin() {
+  const a = api();
+  if (!a || !a.navigate_main_to_gameyfin) return;
+  await a.navigate_main_to_gameyfin();
+  if (a.show_main) await a.show_main();
+}
 
 /* ── Downloads ────────────────────────────────────────────────────── */
 
@@ -279,6 +305,9 @@ async function init() {
   loadDownloads();
   loadPrefixes();
   loadSettings();
+
+  const h = (window.location.hash || "").replace("#", "").trim().toLowerCase();
+  if (h) activateTab(h, false);
 
   setInterval(loadDownloads, 5000);
 }

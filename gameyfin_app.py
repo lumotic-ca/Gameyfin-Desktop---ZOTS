@@ -33,24 +33,112 @@ DOWNLOAD_INTERCEPT_JS = """
     if (window._gfInterceptInstalled) return;
     window._gfInterceptInstalled = true;
 
+    function _gfAbsUrl(url) {
+        if (!url) return '';
+        try {
+            if (url.startsWith('/')) return window.location.origin + url;
+        } catch (_) {}
+        return url;
+    }
+
+    function _gfFilenameFromUrl(url) {
+        try {
+            var u = new URL(_gfAbsUrl(url), window.location.origin);
+            var parts = (u.pathname || '').split('/');
+            var fname = parts[parts.length - 1] || 'download';
+            return fname || 'download';
+        } catch (_) {
+            var parts2 = String(url || '').split('/');
+            var fname2 = parts2[parts2.length - 1] || 'download';
+            if (fname2.indexOf('?') !== -1) fname2 = fname2.split('?')[0];
+            return fname2 || 'download';
+        }
+    }
+
+    function _gfIsDownloadUrl(url) {
+        return !!url && String(url).indexOf('/download/') !== -1;
+    }
+
+    function _gfStartDownload(url) {
+        var absUrl = _gfAbsUrl(url);
+        var fname = _gfFilenameFromUrl(absUrl);
+        if (window.pywebview && window.pywebview.api) {
+            window.pywebview.api.start_download(absUrl, fname);
+            if (window.pywebview.api.navigate_main_to_panel) {
+                window.pywebview.api.navigate_main_to_panel('downloads');
+            }
+        }
+    }
+
+    // Top tabs overlay in the main Gameyfin UI.
+    (function _gfInstallTabs() {
+        if (document.getElementById('gf-desktop-tabs')) return;
+        var bar = document.createElement('div');
+        bar.id = 'gf-desktop-tabs';
+        bar.style.position = 'fixed';
+        bar.style.top = '0';
+        bar.style.left = '0';
+        bar.style.right = '0';
+        bar.style.zIndex = '2147483647';
+        bar.style.height = '40px';
+        bar.style.display = 'flex';
+        bar.style.alignItems = 'center';
+        bar.style.gap = '8px';
+        bar.style.padding = '0 10px';
+        bar.style.background = 'rgba(9, 9, 11, 0.88)';
+        bar.style.backdropFilter = 'blur(10px)';
+        bar.style.borderBottom = '1px solid rgba(63, 63, 70, 0.75)';
+        bar.style.fontFamily = 'system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+        bar.style.userSelect = 'none';
+
+        function mkBtn(label, onClick) {
+            var b = document.createElement('button');
+            b.type = 'button';
+            b.textContent = label;
+            b.style.cursor = 'pointer';
+            b.style.border = '1px solid rgba(63, 63, 70, 0.9)';
+            b.style.borderRadius = '8px';
+            b.style.background = 'rgba(39, 39, 42, 0.9)';
+            b.style.color = '#fafafa';
+            b.style.padding = '5px 10px';
+            b.style.fontSize = '12px';
+            b.style.fontWeight = '600';
+            b.addEventListener('click', function(ev) {
+                ev.preventDefault();
+                ev.stopPropagation();
+                try { onClick(); } catch (_) {}
+            }, true);
+            return b;
+        }
+
+        bar.appendChild(mkBtn('Gameyfin', function() {
+            if (window.pywebview && window.pywebview.api && window.pywebview.api.navigate_main_to_gameyfin) {
+                window.pywebview.api.navigate_main_to_gameyfin();
+            }
+        }));
+        bar.appendChild(mkBtn('Downloads', function() {
+            if (window.pywebview && window.pywebview.api && window.pywebview.api.navigate_main_to_panel) {
+                window.pywebview.api.navigate_main_to_panel('downloads');
+            }
+        }));
+        bar.appendChild(mkBtn('Settings', function() {
+            if (window.pywebview && window.pywebview.api && window.pywebview.api.navigate_main_to_panel) {
+                window.pywebview.api.navigate_main_to_panel('settings');
+            }
+        }));
+
+        document.documentElement.appendChild(bar);
+        // Add top padding so the app isn't hidden under the overlay.
+        var style = document.createElement('style');
+        style.textContent = 'html, body { padding-top: 40px !important; }';
+        document.documentElement.appendChild(style);
+    })();
+
     // Intercept window.open (Gameyfin uses window.open('/download/...', '_top'))
     var _origOpen = window.open;
     window.open = function(url, target, features) {
-        if (url && url.indexOf('/download/') !== -1) {
-            // Extract a reasonable filename from the URL
-            var parts = url.split('/');
-            var fname = parts[parts.length - 1] || 'download';
-            if (fname.indexOf('?') !== -1) fname = fname.split('?')[0];
-
-            // Build absolute URL from relative
-            var absUrl = url;
-            if (url.startsWith('/')) {
-                absUrl = window.location.origin + url;
-            }
-
-            if (window.pywebview && window.pywebview.api) {
-                window.pywebview.api.start_download(absUrl, fname);
-            }
+        if (_gfIsDownloadUrl(url)) {
+            _gfStartDownload(url);
             return null;
         }
         return _origOpen.call(window, url, target, features);
@@ -61,22 +149,49 @@ DOWNLOAD_INTERCEPT_JS = """
         var link = e.target.closest('a[href]');
         if (!link) return;
         var href = link.getAttribute('href') || '';
-        if (href.indexOf('/download/') !== -1) {
+        if (_gfIsDownloadUrl(href)) {
             e.preventDefault();
             e.stopPropagation();
-            var parts = href.split('/');
-            var fname = parts[parts.length - 1] || 'download';
-            if (fname.indexOf('?') !== -1) fname = fname.split('?')[0];
-
-            var absUrl = href;
-            if (href.startsWith('/')) {
-                absUrl = window.location.origin + href;
-            }
-
-            if (window.pywebview && window.pywebview.api) {
-                window.pywebview.api.start_download(absUrl, fname);
-            }
+            _gfStartDownload(href);
         }
+    }, true);
+
+    // Intercept programmatic navigation.
+    try {
+        var _origAssign = window.location.assign.bind(window.location);
+        window.location.assign = function(url) {
+            if (_gfIsDownloadUrl(url)) { _gfStartDownload(url); return; }
+            return _origAssign(url);
+        };
+    } catch (_) {}
+
+    try {
+        var _origReplace = window.location.replace.bind(window.location);
+        window.location.replace = function(url) {
+            if (_gfIsDownloadUrl(url)) { _gfStartDownload(url); return; }
+            return _origReplace(url);
+        };
+    } catch (_) {}
+
+    // If Gameyfin navigates directly to /download/ (location.href = ...), we still catch it on load.
+    try {
+        if (_gfIsDownloadUrl(window.location.pathname || window.location.href)) {
+            _gfStartDownload(window.location.href);
+        }
+    } catch (_) {}
+
+    // Intercept form submits that point at /download/.
+    document.addEventListener('submit', function(e) {
+        try {
+            var form = e.target;
+            if (!form) return;
+            var action = form.getAttribute('action') || '';
+            if (_gfIsDownloadUrl(action)) {
+                e.preventDefault();
+                e.stopPropagation();
+                _gfStartDownload(action);
+            }
+        } catch (_) {}
     }, true);
 
     // Hide horizontal overflow (matches previous QWebEngineScript behaviour)

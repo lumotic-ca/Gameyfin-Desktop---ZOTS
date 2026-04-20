@@ -41,6 +41,39 @@ class GFBridge:
     def get_platform(self) -> str:
         return sys.platform
 
+    # ── Main window navigation (tabs) ─────────────────────────────────
+
+    def navigate_main_to_gameyfin(self) -> str:
+        """Load the configured Gameyfin URL in the main window."""
+        url_raw = settings_manager.get("GF_URL") or ""
+        normalized = normalize_gameyfin_url(url_raw) or url_raw
+        if not normalized:
+            return json.dumps({"ok": False, "error": "Gameyfin URL is not configured."})
+
+        if self._on_gameyfin_navigation:
+            self._on_gameyfin_navigation(True)
+        if self._main_window:
+            self._main_window.load_url(normalized)
+            self._main_window.show()
+        return json.dumps({"ok": True})
+
+    def navigate_main_to_panel(self, tab: str = "downloads") -> str:
+        """Load the local panel UI in the main window, optionally selecting a tab via hash."""
+        tab_norm = (tab or "").strip().lower() or "downloads"
+        if tab_norm not in ("downloads", "settings", "prefixes"):
+            tab_norm = "downloads"
+
+        path = resource_path(os.path.join("gameyfin_frontend", "panel", "index.html"))
+        base = f"file:///{path}" if sys.platform == "win32" else f"file://{path}"
+        url = f"{base}#{tab_norm}"
+
+        if self._on_gameyfin_navigation:
+            self._on_gameyfin_navigation(False)
+        if self._main_window:
+            self._main_window.load_url(url)
+            self._main_window.show()
+        return json.dumps({"ok": True})
+
     # ── Settings ──────────────────────────────────────────────────────
 
     def get_settings(self) -> str:
