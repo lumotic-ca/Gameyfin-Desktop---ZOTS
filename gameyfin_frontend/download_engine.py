@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import threading
 import time
 import uuid
@@ -8,7 +9,54 @@ from typing import Optional, Callable
 import requests
 
 from .settings import settings_manager
-from .utils import format_size
+
+
+_FILENAME_RE = re.compile(r"[^A-Za-z0-9._() -]+")
+
+
+def _safe_filename(name: str, fallback: str = "download") -> str:
+    n = (name or "").strip().strip('"').strip()
+    if not n:
+        return fallback
+    n = n.replace("\\", "_").replace("/", "_").replace(":", "_")
+    n = _FILENAME_RE.sub("_", n)
+    n = n.strip(" ._")
+    return n or fallback
+
+
+def _filename_from_content_disposition(cd: str) -> str:
+    """
+    Best-effort parse of Content-Disposition for filename / filename*.
+    """
+    if not cd:
+        return ""
+    # filename*=UTF-8''name.ext
+    m = re.search(r"filename\*\s*=\s*([^']*)''([^;]+)", cd, flags=re.IGNORECASE)
+    if m:
+        try:
+            from urllib.parse import unquote
+            return unquote(m.group(2))
+        except Exception:
+            return m.group(2)
+    # filename*=UTF-8'name.ext   (some servers omit the second apostrophe)
+    m = re.search(r"filename\*\s*=\s*([^']*)'([^;]+)", cd, flags=re.IGNORECASE)
+    if m:
+        try:
+            from urllib.parse import unquote
+            return unquote(m.group(2))
+        except Exception:
+            return m.group(2)
+    m = re.search(r'filename\s*=\s*\"?([^\";]+)\"?', cd, flags=re.IGNORECASE)
+    if m:
+        return m.group(1)
+    return ""
+
+
+def _looks_like_html(buf: bytes) -> bool:
+    if not buf:
+        return False
+    s = buf.lstrip()[:256].lower()
+    return s.startswith(b"<!doctype html") or s.startswith(b"<html") or b"<head" in s or b"<body" in s
 
 
 class DownloadEngine:
@@ -130,7 +178,10 @@ class _ActiveDownload:
                         value = c.get("value", "")
                         domain = c.get("domain", "")
                         if name and value:
-                            session.cookies.set(name, value, domain=domain)
+                            if domain:
+                                session.cookies.set(name, value, domain=domain)
+                            else:
+                                session.cookies.set(name, value)
             except Exception as e:
                 print(f"Warning: could not extract cookies: {e}")
         return session
@@ -143,8 +194,33 @@ class _ActiveDownload:
             os.makedirs(os.path.dirname(save_path), exist_ok=True)
 
             session = self._build_session()
-            resp = session.get(url, stream=True, timeout=30, verify=False)
+            resp = session.get(url, stream=True, timeout=60, verify=False, allow_redirects=True)
             resp.raise_for_status()
+
+            # Determine final filename/path from response headers if available.
+            cd = resp.headers.get("Content-Disposition", "") or resp.headers.get("content-disposition", "")
+            ct = resp.headers.get("Content-Type", "") or resp.headers.get("content-type", "")
+            final_url = getattr(resp, "url", url) or url
+            self.record["final_url"] = final_url
+            self.record["content_type"] = ct
+
+            server_name = _filename_from_content_disposition(cd)
+            server_name = _safe_filename(server_name, fallback="")
+
+            base_dir = os.path.dirname(save_path)
+            requested_name = os.path.basename(save_path)
+
+            # If the requested filename is a numeric ID (no ext) or generic, prefer server filename.
+            if server_name:
+                final_path = os.path.join(base_dir, server_name)
+            else:
+                final_path = save_path
+                # If it's numeric with no extension and content looks like an archive, add .zip.
+                if re.fullmatch(r"\\d+", requested_name) and "." not in requested_name:
+                    if "zip" in ct.lower() or "octet-stream" in ct.lower():
+                        final_path = save_path + ".zip"
+
+            self.record["path"] = final_path
 
             total = int(resp.headers.get("Content-Length", 0))
             self.record["total_bytes"] = total
@@ -153,8 +229,27 @@ class _ActiveDownload:
             last_progress_time = 0.0
             chunk_size = 1024 * 256
 
-            with open(save_path, "wb") as f:
-                for chunk in resp.iter_content(chunk_size=chunk_size):
+            # Peek at first chunk to detect HTML/login/error pages.
+            it = resp.iter_content(chunk_size=chunk_size)
+            first = next(it, b"")
+            if self._cancelled:
+                return
+
+            if ct.lower().startswith("text/html") or _looks_like_html(first):
+                snippet = first[:1024].decode("utf-8", errors="replace")
+                raise RuntimeError(
+                    "Server returned HTML instead of a game file. "
+                    "This usually means you're not authenticated (cookies missing) or the server redirected to a login/error page. "
+                    f"(final_url={final_url}, content_type={ct}, first_bytes={len(first)})\n\n"
+                    + snippet
+                )
+
+            with open(final_path, "wb") as f:
+                if first:
+                    f.write(first)
+                    received += len(first)
+                    self.record["received_bytes"] = received
+                for chunk in it:
                     if self._cancelled:
                         return
 
