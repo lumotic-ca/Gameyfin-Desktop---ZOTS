@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QFormLayout, QLineEdit,
                              QPushButton, QLabel, QSpinBox, QMessageBox, QCheckBox, QHBoxLayout, QFileDialog, QComboBox)
 from qt_material import list_themes
 from .settings import settings_manager
+from .utils import normalize_gameyfin_url
 
 class SettingsWidget(QWidget):
     def __init__(self, parent=None):
@@ -116,7 +117,16 @@ class SettingsWidget(QWidget):
             QMessageBox.critical(self, "Error", f"Invalid JSON for stores: {e}")
             return
 
-        settings_manager.set("GF_URL", self.url_edit.text())
+        gf_url = normalize_gameyfin_url(self.url_edit.text())
+        if not gf_url:
+            QMessageBox.critical(
+                self,
+                "Invalid URL",
+                "Enter a full Gameyfin URL with host, e.g. http://192.168.1.10:8080 or https://gameyfin.example.com",
+            )
+            return
+        self.url_edit.setText(gf_url)
+        settings_manager.set("GF_URL", gf_url)
         settings_manager.set("GF_WINDOW_WIDTH", self.width_spin.value())
         settings_manager.set("GF_WINDOW_HEIGHT", self.height_spin.value())
         settings_manager.set("PROTONPATH", self.proton_edit.text())

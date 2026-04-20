@@ -12,7 +12,7 @@ from gameyfin_frontend.widgets.prefix_manager import PrefixManagerWidget
 
 from .settings_widget import SettingsWidget
 from .settings import settings_manager
-from .utils import get_app_icon_path
+from .utils import get_app_icon_path, normalize_gameyfin_url
 
 
 class CustomWebEnginePage(QWebEnginePage):
@@ -40,6 +40,13 @@ class CustomWebEnginePage(QWebEnginePage):
         if self.create_window_callback:
             return self.create_window_callback(_type)
         return None
+
+    def certificateError(self, error) -> bool:
+        # Self-signed / private CA HTTPS (typical for homelab) otherwise loads as a blank page.
+        if error.isOverridable():
+            error.acceptCertificate()
+            return True
+        return False
 
     def acceptNavigationRequest(self, url, nav_type, is_main_frame):
         if is_main_frame:
@@ -96,12 +103,14 @@ class GameyfinWindow(QMainWindow):
         settings.setAttribute(QWebEngineSettings.WebAttribute.PluginsEnabled, False)
         settings.setAttribute(QWebEngineSettings.WebAttribute.PdfViewerEnabled, False)
         settings.setAttribute(QWebEngineSettings.WebAttribute.ScreenCaptureEnabled, False)
-        settings.setAttribute(QWebEngineSettings.WebAttribute.WebGLEnabled, False)
-        settings.setAttribute(QWebEngineSettings.WebAttribute.Accelerated2dCanvasEnabled, False)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.WebGLEnabled, True)
+        settings.setAttribute(QWebEngineSettings.WebAttribute.Accelerated2dCanvasEnabled, True)
         settings.setAttribute(QWebEngineSettings.WebAttribute.DnsPrefetchEnabled, False)
 
         self.browser = QWebEngineView()
-        base_url = QUrl(settings_manager.get("GF_URL"))
+        url_raw = settings_manager.get("GF_URL")
+        normalized = normalize_gameyfin_url(url_raw) if url_raw else None
+        base_url = QUrl(normalized or url_raw or "")
         
         # Main page restricted to the Gameyfin host
         self.custom_page = CustomWebEnginePage(self.profile, self.browser, restricted_host=base_url.host(), main_host=base_url.host())
@@ -178,7 +187,9 @@ class GameyfinWindow(QMainWindow):
     def add_new_browser_tab(self, url):
         view = QWebEngineView()
         # External tabs are not restricted
-        base_url = QUrl(settings_manager.get("GF_URL"))
+        raw = settings_manager.get("GF_URL")
+        nu = normalize_gameyfin_url(raw) if raw else None
+        base_url = QUrl(nu or raw or "")
         page = CustomWebEnginePage(self.profile, view, restricted_host=None, main_host=base_url.host())
         page.new_tab_requested.connect(self.add_new_browser_tab)
         page.main_tab_redirect_requested.connect(self.redirect_to_main_tab)
@@ -197,7 +208,9 @@ class GameyfinWindow(QMainWindow):
 
     def create_new_window_for_page(self, _type):
         view = QWebEngineView()
-        base_url = QUrl(settings_manager.get("GF_URL"))
+        raw = settings_manager.get("GF_URL")
+        nu = normalize_gameyfin_url(raw) if raw else None
+        base_url = QUrl(nu or raw or "")
         page = CustomWebEnginePage(self.profile, view, restricted_host=None, main_host=base_url.host())
         page.new_tab_requested.connect(self.add_new_browser_tab)
         page.main_tab_redirect_requested.connect(self.redirect_to_main_tab)
@@ -330,7 +343,8 @@ class GameyfinWindow(QMainWindow):
         # 2. Update Browser URL
         new_url_str = settings_manager.get("GF_URL")
         if new_url_str:
-            new_url = QUrl(new_url_str)
+            normalized = normalize_gameyfin_url(new_url_str)
+            new_url = QUrl(normalized or new_url_str)
             new_host = new_url.host()
             if self.browser.url() != new_url:
                 print(f"Applying new URL: {new_url.toString()}")

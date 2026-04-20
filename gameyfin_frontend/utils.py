@@ -1,8 +1,27 @@
 import os
 import sys
 from pathlib import Path
+from typing import Optional
 from PyQt6.QtGui import QGuiApplication
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QUrl
+
+
+def normalize_gameyfin_url(url_str: str) -> Optional[str]:
+    """
+    Return a usable absolute URL for the embedded browser, or None if invalid.
+    Adds a scheme when missing (e.g. "host:8080" -> "http://host:8080") via QUrl.fromUserInput.
+    """
+    s = (url_str or "").strip()
+    if not s:
+        return None
+    q = QUrl(s)
+    if not q.scheme():
+        q = QUrl.fromUserInput(s)
+    if not q.isValid():
+        return None
+    if not q.host():
+        return None
+    return q.toString()
 
 
 def resource_path(relative_path: str) -> str:
