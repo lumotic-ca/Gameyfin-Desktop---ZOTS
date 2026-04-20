@@ -97,3 +97,21 @@ def open_path(path: str):
         subprocess.Popen(["open", path])
     else:
         subprocess.Popen(["xdg-open", path])
+
+
+def get_default_download_dir() -> str:
+    """
+    Return the OS default Downloads directory.
+
+    Notes:
+    - Windows: prefer %USERPROFILE%\\Downloads (WebView2 default).
+    - Linux: prefer XDG_DOWNLOAD_DIR if available.
+    """
+    if sys.platform == "win32":
+        home = os.environ.get("USERPROFILE") or str(Path.home())
+        return os.path.join(home, "Downloads")
+
+    try:
+        return str(get_xdg_user_dir("DOWNLOAD"))
+    except Exception:
+        return os.path.join(str(Path.home()), "Downloads")

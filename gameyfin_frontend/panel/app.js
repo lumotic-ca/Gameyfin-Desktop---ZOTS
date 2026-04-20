@@ -71,9 +71,13 @@ function renderDownloads(records) {
   empty.style.display = "none";
 
   container.innerHTML = records.map(r => {
-    const fname = r.path ? r.path.split(/[\\/]/).pop() : "unknown";
+    const fname = r.last_seen_filename
+      ? r.last_seen_filename
+      : (r.path ? r.path.split(/[\\/]/).pop() : "unknown");
     const status = r.status || "Unknown";
-    const pct = status === "Completed" ? 100 : (r.total_bytes > 0 ? Math.floor((r.received_bytes || 0) / r.total_bytes * 100) : 0);
+    const pct = status === "Completed"
+      ? 100
+      : (r.total_bytes > 0 ? Math.floor((r.received_bytes || 0) / r.total_bytes * 100) : 0);
     const isZip = fname.toLowerCase().endsWith(".zip");
 
     let badgeClass = "badge-info";
@@ -82,7 +86,12 @@ function renderDownloads(records) {
     else if (status === "Downloading") badgeClass = "badge-info";
 
     let sizeText = "";
-    if (r.total_bytes > 0) sizeText = formatSize(r.total_bytes);
+    if (status === "Downloading") {
+      const got = r.received_bytes ? formatSize(r.received_bytes) : "0 B";
+      sizeText = r.total_bytes > 0 ? `${got} / ${formatSize(r.total_bytes)}` : `${got}`;
+    } else if (r.total_bytes > 0) {
+      sizeText = formatSize(r.total_bytes);
+    }
 
     let buttons = "";
     if (status === "Downloading") {
@@ -97,13 +106,16 @@ function renderDownloads(records) {
     }
     buttons += `<button class="btn btn-sm" onclick="removeDl('${r.id}')">Remove</button>`;
 
+    const indeterminate = (status === "Downloading" && (!r.total_bytes || r.total_bytes <= 0));
     return `<div class="card" id="dl-${r.id}">
       <div class="card-header">
         <span class="card-title">${esc(fname)}</span>
-        <span class="badge ${badgeClass}">${esc(status)}</span>
+        <span class="badge ${badgeClass} ${status === "Downloading" ? "badge-pulse" : ""}">${esc(status)}</span>
       </div>
       ${sizeText ? `<div class="card-subtitle">${sizeText}</div>` : ""}
-      <div class="progress-outer"><div class="progress-inner" id="prog-${r.id}" style="width:${pct}%"></div></div>
+      <div class="progress-outer ${indeterminate ? "progress-indeterminate" : ""}">
+        <div class="progress-inner" id="prog-${r.id}" style="width:${pct}%"></div>
+      </div>
       <div class="btn-row">${buttons}</div>
     </div>`;
   }).join("");

@@ -39,12 +39,13 @@ class DownloadEngine:
             self.records = []
 
     def _save_history(self):
-        try:
-            os.makedirs(self.data_dir, exist_ok=True)
-            with open(self.json_path, "w") as f:
-                json.dump(self.records, f, indent=2)
-        except Exception as e:
-            print(f"[download_engine] Error saving history: {e}")
+        with self._lock:
+            try:
+                os.makedirs(self.data_dir, exist_ok=True)
+                with open(self.json_path, "w") as f:
+                    json.dump(self.records, f, indent=2)
+            except Exception as e:
+                print(f"[download_engine] Error saving history: {e}")
 
     def register_download(
         self,
@@ -64,6 +65,7 @@ class DownloadEngine:
             "status": "Downloading",
             "total_bytes": 0,
             "received_bytes": 0,
+            "last_seen_filename": "",
         }
 
         with self._lock:
@@ -109,6 +111,7 @@ class DownloadEngine:
         matched_file: Optional[str] = None
         last_size = 0
         stable_count = 0
+        last_emit = 0.0
         timeout = 30 * 60
 
         while time.time() - start_time < timeout:
@@ -132,7 +135,10 @@ class DownloadEngine:
 
                 rec["received_bytes"] = size
                 rec["path"] = fp
-                if on_progress:
+                rec["last_seen_filename"] = matched_file
+                now = time.time()
+                if on_progress and (now - last_emit) >= 0.25:
+                    last_emit = now
                     on_progress(dl_id, size, rec.get("total_bytes", 0))
 
                 if size == last_size and size > 0:
@@ -156,46 +162,47 @@ class DownloadEngine:
             except OSError:
                 continue
 
-            for fname in current_files:
-                # Skip browser partial download markers
-                if fname.endswith(".crdownload") or fname.endswith(".tmp") or fname.endswith(".partial"):
-                    continue
+            # Prefer partial download files first (Edge uses .crdownload).
+            partials = [f for f in current_files if f.endswith(".crdownload") or f.endswith(".partial") or f.endswith(".tmp")]
+            finals = [f for f in current_files if f not in partials]
 
+            # 1) Lock onto the first new partial file and track its size growth.
+            for fname in partials:
+                fp = os.path.join(download_dir, fname)
+                try:
+                    mtime = os.path.getmtime(fp)
+                    size = os.path.getsize(fp)
+                except OSError:
+                    continue
+                if mtime >= start_time - 5:
+                    matched_file = fname
+                    rec["last_seen_filename"] = fname
+                    rec["received_bytes"] = size
+                    rec["path"] = fp
+                    if on_progress:
+                        on_progress(dl_id, size, 0)
+                    print(f"[download_engine] Watcher {dl_id}: detected partial {fname}")
+                    break
+
+            if matched_file:
+                continue
+
+            # 2) Otherwise, lock onto a new final file.
+            for fname in finals:
                 fp = os.path.join(download_dir, fname)
                 if not os.path.isfile(fp):
                     continue
-
                 try:
                     mtime = os.path.getmtime(fp)
                 except OSError:
                     continue
-
                 if fname not in existing_files or mtime > existing_files.get(fname, 0) + 1:
                     if mtime >= start_time - 5:
                         matched_file = fname
                         last_size = 0
                         stable_count = 0
+                        rec["last_seen_filename"] = fname
                         print(f"[download_engine] Watcher {dl_id}: detected file {fname}")
-                        break
-
-            # Also check for partial download files (Edge uses .crdownload)
-            if not matched_file:
-                for fname in current_files:
-                    if not (fname.endswith(".crdownload") or fname.endswith(".partial")):
-                        continue
-                    fp = os.path.join(download_dir, fname)
-                    try:
-                        mtime = os.path.getmtime(fp)
-                    except OSError:
-                        continue
-                    if mtime >= start_time - 5:
-                        try:
-                            size = os.path.getsize(fp)
-                        except OSError:
-                            size = 0
-                        rec["received_bytes"] = size
-                        if on_progress:
-                            on_progress(dl_id, size, 0)
                         break
 
         rec = self._find_record(dl_id)

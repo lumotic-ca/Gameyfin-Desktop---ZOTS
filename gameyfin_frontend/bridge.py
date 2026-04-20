@@ -15,7 +15,7 @@ from .workers import UnzipWorker
 from .umu_database import UmuDatabase
 from . import prefix_manager
 from . import dialogs
-from .utils import normalize_gameyfin_url, open_path, resource_path
+from .utils import normalize_gameyfin_url, open_path, resource_path, get_default_download_dir
 
 
 class GFBridge:
@@ -141,7 +141,12 @@ class GFBridge:
         the download folder for new files appearing from the browser's native
         download handler.
         """
-        download_dir = settings_manager.get("GF_DEFAULT_DOWNLOAD_DIR") or os.path.expanduser("~/Downloads")
+        # WebView2 native downloads land in the OS default Downloads folder.
+        # On Windows, this is typically %USERPROFILE%\\Downloads.
+        if sys.platform == "win32":
+            download_dir = get_default_download_dir()
+        else:
+            download_dir = settings_manager.get("GF_DEFAULT_DOWNLOAD_DIR") or get_default_download_dir()
 
         def on_progress(dl_id, received, total):
             pct = int((received / total) * 100) if total > 0 else 0
