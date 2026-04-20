@@ -26,8 +26,9 @@ webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = False
 # Homelab HTTPS with private CAs / self-signed certs
 webview.settings["IGNORE_SSL_ERRORS"] = True
 
-# JS injected into the Gameyfin web UI after each page load to intercept
-# download navigations and route them through the Python bridge using fetch().
+# JS injected into the Gameyfin web UI after each page load.
+# Intercepts download navigations and triggers native browser downloads
+# via hidden iframe (full auth, no CORS issues).
 DOWNLOAD_INTERCEPT_JS = """
 (function() {
     if (window._gfInterceptInstalled) return;
@@ -45,113 +46,28 @@ DOWNLOAD_INTERCEPT_JS = """
         return !!url && String(url).indexOf('/download/') !== -1;
     }
 
-    function _gfParseFilename(contentDisposition) {
-        if (!contentDisposition) return '';
-        var match = contentDisposition.match(/filename\\*=(?:UTF-8''|utf-8'')([^;]+)/i);
-        if (match) {
-            try { return decodeURIComponent(match[1]); } catch (_) { return match[1]; }
-        }
-        match = contentDisposition.match(/filename\\*=[^']*'([^;]+)/i);
-        if (match) {
-            try { return decodeURIComponent(match[1]); } catch (_) { return match[1]; }
-        }
-        match = contentDisposition.match(/filename\\s*=\\s*"?([^";]+)"?/i);
-        if (match) return match[1].trim();
-        return '';
-    }
-
-    function _gfSafeFilename(name, fallback) {
-        fallback = fallback || 'download.zip';
-        if (!name) return fallback;
-        name = name.replace(/[\\\\/:*?"<>|]/g, '_').trim();
-        return name || fallback;
-    }
-
-    async function _gfDownloadWithFetch(url) {
-        var api = window.pywebview && window.pywebview.api;
-        if (!api) {
-            console.error('[GF] pywebview.api not available');
-            return;
-        }
-
-        var absUrl = _gfAbsUrl(url);
-        var dlId = null;
-
-        try {
-            var regResult = JSON.parse(await api.register_download(absUrl));
-            if (!regResult.ok) {
-                console.error('[GF] register_download failed:', regResult.error);
-                return;
-            }
-            dlId = regResult.id;
-
-            api.navigate_main_to_panel('downloads');
-
-            var response = await fetch(absUrl, { credentials: 'include' });
-
-            if (!response.ok) {
-                await api.download_error(dlId, 'HTTP ' + response.status + ' ' + response.statusText);
-                return;
-            }
-
-            var cd = response.headers.get('Content-Disposition') || '';
-            var ct = response.headers.get('Content-Type') || '';
-            var total = parseInt(response.headers.get('Content-Length') || '0', 10);
-
-            var serverFilename = _gfParseFilename(cd);
-            var filename = _gfSafeFilename(serverFilename, 'download.zip');
-
-            if (ct.toLowerCase().startsWith('text/html')) {
-                await api.download_error(dlId, 'Server returned HTML instead of a file (authentication may have failed)');
-                return;
-            }
-
-            var reader = response.body.getReader();
-            var chunks = [];
-            var received = 0;
-            var lastProgress = 0;
-
-            while (true) {
-                var result = await reader.read();
-                if (result.done) break;
-
-                chunks.push(result.value);
-                received += result.value.length;
-
-                var now = Date.now();
-                if (now - lastProgress > 250 || result.done) {
-                    lastProgress = now;
-                    api.download_progress(dlId, received, total);
-                }
-            }
-
-            var blob = new Blob(chunks);
-
-            var blobUrl = URL.createObjectURL(blob);
-            var a = document.createElement('a');
-            a.href = blobUrl;
-            a.download = filename;
-            a.style.display = 'none';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-
-            setTimeout(function() { URL.revokeObjectURL(blobUrl); }, 1000);
-
-            await api.download_complete(dlId, filename, received);
-
-        } catch (err) {
-            console.error('[GF] Download error:', err);
-            if (dlId && api) {
-                await api.download_error(dlId, String(err.message || err));
-            }
-        }
-    }
-
     function _gfStartDownload(url) {
-        _gfDownloadWithFetch(url).catch(function(e) {
-            console.error('[GF] _gfDownloadWithFetch failed:', e);
-        });
+        var absUrl = _gfAbsUrl(url);
+        var api = window.pywebview && window.pywebview.api;
+        if (!api) return;
+
+        // Register the download in our tracker, then trigger native download.
+        // The hidden iframe uses the browser's own session (cookies, CSRF, etc.)
+        // so there are no CORS or auth issues.
+        api.register_download(absUrl);
+
+        var iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        iframe.src = absUrl;
+        document.body.appendChild(iframe);
+        setTimeout(function() {
+            try { document.body.removeChild(iframe); } catch(_) {}
+        }, 120000);
+
+        // Brief delay so the browser starts the download before we navigate away.
+        setTimeout(function() {
+            if (api.navigate_main_to_panel) api.navigate_main_to_panel('downloads');
+        }, 2000);
     }
 
     // Top tabs overlay in the main Gameyfin UI.
@@ -227,7 +143,6 @@ DOWNLOAD_INTERCEPT_JS = """
         return _origOpen.call(window, url, target, features);
     };
 
-    // Also intercept direct link clicks to /download/ paths
     document.addEventListener('click', function(e) {
         var link = e.target.closest('a[href]');
         if (!link) return;
@@ -239,7 +154,6 @@ DOWNLOAD_INTERCEPT_JS = """
         }
     }, true);
 
-    // Intercept programmatic navigation.
     try {
         var _origAssign = window.location.assign.bind(window.location);
         window.location.assign = function(url) {
@@ -256,14 +170,12 @@ DOWNLOAD_INTERCEPT_JS = """
         };
     } catch (_) {}
 
-    // If Gameyfin navigates directly to /download/ (location.href = ...), catch it on load.
     try {
         if (_gfIsDownloadUrl(window.location.pathname || window.location.href)) {
             _gfStartDownload(window.location.href);
         }
     } catch (_) {}
 
-    // Intercept form submits that point at /download/.
     document.addEventListener('submit', function(e) {
         try {
             var form = e.target;
@@ -277,7 +189,6 @@ DOWNLOAD_INTERCEPT_JS = """
         } catch (_) {}
     }, true);
 
-    // Hide horizontal overflow
     document.documentElement.style.overflowX = 'hidden';
     document.body.style.overflowX = 'hidden';
 })();

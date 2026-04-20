@@ -126,51 +126,53 @@ class GFBridge:
         return json.dumps({"ok": True})
 
     # ── Downloads ─────────────────────────────────────────────────────
-    # JS handles the actual HTTP fetch (with browser auth), these methods
-    # just manage download records and UI notifications.
+    # The browser handles the actual download (via hidden iframe with full
+    # auth). These methods manage records and a filesystem watcher that
+    # detects new files and tracks progress in the download folder.
 
     def get_downloads(self) -> str:
         records = self._download_engine.get_records()
         return json.dumps(records)
 
     def register_download(self, url: str) -> str:
-        """Called by JS before starting a fetch(). Creates a download record."""
+        """Called by JS when a download link is intercepted.
+
+        Creates a download record and starts a background watcher that polls
+        the download folder for new files appearing from the browser's native
+        download handler.
+        """
+        download_dir = settings_manager.get("GF_DEFAULT_DOWNLOAD_DIR") or os.path.expanduser("~/Downloads")
+
+        def on_progress(dl_id, received, total):
+            pct = int((received / total) * 100) if total > 0 else 0
+            if self._main_window:
+                self._main_window.evaluate_js(
+                    f'if(window._onDownloadProgress) window._onDownloadProgress("{dl_id}",{received},{total},{pct})'
+                )
+
+        def on_complete(dl_id):
+            if self._main_window:
+                self._main_window.evaluate_js(
+                    f'if(window._onDownloadComplete) window._onDownloadComplete("{dl_id}")'
+                )
+
+        def on_error(dl_id, msg):
+            if self._main_window:
+                safe_msg = msg.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
+                self._main_window.evaluate_js(
+                    f'if(window._onDownloadError) window._onDownloadError("{dl_id}","{safe_msg}")'
+                )
+
         try:
-            dl_id = self._download_engine.register_download(url)
+            dl_id = self._download_engine.register_download(
+                url, download_dir,
+                on_progress=on_progress,
+                on_complete=on_complete,
+                on_error=on_error,
+            )
             return json.dumps({"ok": True, "id": dl_id})
         except Exception as e:
             return json.dumps({"ok": False, "error": str(e)})
-
-    def download_progress(self, dl_id: str, received: int, total: int) -> str:
-        """Called by JS periodically during fetch() streaming."""
-        self._download_engine.update_progress(dl_id, received, total)
-        pct = int((received / total) * 100) if total > 0 else 0
-        if self._main_window:
-            self._main_window.evaluate_js(
-                f'if(window._onDownloadProgress) window._onDownloadProgress("{dl_id}",{received},{total},{pct})'
-            )
-        return json.dumps({"ok": True})
-
-    def download_complete(self, dl_id: str, filename: str, size: int) -> str:
-        """Called by JS after blob download is triggered."""
-        download_dir = settings_manager.get("GF_DEFAULT_DOWNLOAD_DIR") or os.path.expanduser("~/Downloads")
-        final_path = os.path.join(download_dir, filename)
-        self._download_engine.mark_complete(dl_id, final_path, size)
-        if self._main_window:
-            self._main_window.evaluate_js(
-                f'if(window._onDownloadComplete) window._onDownloadComplete("{dl_id}")'
-            )
-        return json.dumps({"ok": True})
-
-    def download_error(self, dl_id: str, error: str) -> str:
-        """Called by JS when fetch() fails."""
-        self._download_engine.mark_failed(dl_id, error)
-        if self._main_window:
-            safe_msg = error.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
-            self._main_window.evaluate_js(
-                f'if(window._onDownloadError) window._onDownloadError("{dl_id}","{safe_msg}")'
-            )
-        return json.dumps({"ok": True})
 
     def cancel_download(self, dl_id: str):
         self._download_engine.cancel_download(dl_id)
