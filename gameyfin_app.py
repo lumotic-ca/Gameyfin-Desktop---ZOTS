@@ -21,13 +21,13 @@ from gameyfin_frontend.tray import GameyfinTray
 load_dotenv()
 
 # pywebview global settings
-webview.settings["ALLOW_DOWNLOADS"] = False
+webview.settings["ALLOW_DOWNLOADS"] = True
 webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = False
 # Homelab HTTPS with private CAs / self-signed certs
 webview.settings["IGNORE_SSL_ERRORS"] = True
 
 # JS injected into the Gameyfin web UI after each page load to intercept
-# download navigations and route them through the Python bridge.
+# download navigations and route them through the Python bridge using fetch().
 DOWNLOAD_INTERCEPT_JS = """
 (function() {
     if (window._gfInterceptInstalled) return;
@@ -41,32 +41,117 @@ DOWNLOAD_INTERCEPT_JS = """
         return url;
     }
 
-    function _gfFilenameFromUrl(url) {
-        try {
-            var u = new URL(_gfAbsUrl(url), window.location.origin);
-            var parts = (u.pathname || '').split('/');
-            var fname = parts[parts.length - 1] || 'download';
-            return fname || 'download';
-        } catch (_) {
-            var parts2 = String(url || '').split('/');
-            var fname2 = parts2[parts2.length - 1] || 'download';
-            if (fname2.indexOf('?') !== -1) fname2 = fname2.split('?')[0];
-            return fname2 || 'download';
-        }
-    }
-
     function _gfIsDownloadUrl(url) {
         return !!url && String(url).indexOf('/download/') !== -1;
     }
 
-    function _gfStartDownload(url) {
-        var absUrl = _gfAbsUrl(url);
-        var fname = _gfFilenameFromUrl(absUrl);
-        if (window.pywebview && window.pywebview.api) {
-            // Navigation to the Downloads tab is handled inside bridge.start_download()
-            // AFTER cookies are captured, so we do NOT navigate here.
-            window.pywebview.api.start_download(absUrl, fname);
+    function _gfParseFilename(contentDisposition) {
+        if (!contentDisposition) return '';
+        var match = contentDisposition.match(/filename\\*=(?:UTF-8''|utf-8'')([^;]+)/i);
+        if (match) {
+            try { return decodeURIComponent(match[1]); } catch (_) { return match[1]; }
         }
+        match = contentDisposition.match(/filename\\*=[^']*'([^;]+)/i);
+        if (match) {
+            try { return decodeURIComponent(match[1]); } catch (_) { return match[1]; }
+        }
+        match = contentDisposition.match(/filename\\s*=\\s*"?([^";]+)"?/i);
+        if (match) return match[1].trim();
+        return '';
+    }
+
+    function _gfSafeFilename(name, fallback) {
+        fallback = fallback || 'download.zip';
+        if (!name) return fallback;
+        name = name.replace(/[\\\\/:*?"<>|]/g, '_').trim();
+        return name || fallback;
+    }
+
+    async function _gfDownloadWithFetch(url) {
+        var api = window.pywebview && window.pywebview.api;
+        if (!api) {
+            console.error('[GF] pywebview.api not available');
+            return;
+        }
+
+        var absUrl = _gfAbsUrl(url);
+        var dlId = null;
+
+        try {
+            var regResult = JSON.parse(await api.register_download(absUrl));
+            if (!regResult.ok) {
+                console.error('[GF] register_download failed:', regResult.error);
+                return;
+            }
+            dlId = regResult.id;
+
+            api.navigate_main_to_panel('downloads');
+
+            var response = await fetch(absUrl, { credentials: 'include' });
+
+            if (!response.ok) {
+                await api.download_error(dlId, 'HTTP ' + response.status + ' ' + response.statusText);
+                return;
+            }
+
+            var cd = response.headers.get('Content-Disposition') || '';
+            var ct = response.headers.get('Content-Type') || '';
+            var total = parseInt(response.headers.get('Content-Length') || '0', 10);
+
+            var serverFilename = _gfParseFilename(cd);
+            var filename = _gfSafeFilename(serverFilename, 'download.zip');
+
+            if (ct.toLowerCase().startsWith('text/html')) {
+                await api.download_error(dlId, 'Server returned HTML instead of a file (authentication may have failed)');
+                return;
+            }
+
+            var reader = response.body.getReader();
+            var chunks = [];
+            var received = 0;
+            var lastProgress = 0;
+
+            while (true) {
+                var result = await reader.read();
+                if (result.done) break;
+
+                chunks.push(result.value);
+                received += result.value.length;
+
+                var now = Date.now();
+                if (now - lastProgress > 250 || result.done) {
+                    lastProgress = now;
+                    api.download_progress(dlId, received, total);
+                }
+            }
+
+            var blob = new Blob(chunks);
+
+            var blobUrl = URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = blobUrl;
+            a.download = filename;
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+
+            setTimeout(function() { URL.revokeObjectURL(blobUrl); }, 1000);
+
+            await api.download_complete(dlId, filename, received);
+
+        } catch (err) {
+            console.error('[GF] Download error:', err);
+            if (dlId && api) {
+                await api.download_error(dlId, String(err.message || err));
+            }
+        }
+    }
+
+    function _gfStartDownload(url) {
+        _gfDownloadWithFetch(url).catch(function(e) {
+            console.error('[GF] _gfDownloadWithFetch failed:', e);
+        });
     }
 
     // Top tabs overlay in the main Gameyfin UI.
@@ -127,7 +212,6 @@ DOWNLOAD_INTERCEPT_JS = """
         }));
 
         document.documentElement.appendChild(bar);
-        // Add top padding so the app isn't hidden under the overlay.
         var style = document.createElement('style');
         style.textContent = 'html, body { padding-top: 40px !important; }';
         document.documentElement.appendChild(style);
@@ -172,7 +256,7 @@ DOWNLOAD_INTERCEPT_JS = """
         };
     } catch (_) {}
 
-    // If Gameyfin navigates directly to /download/ (location.href = ...), we still catch it on load.
+    // If Gameyfin navigates directly to /download/ (location.href = ...), catch it on load.
     try {
         if (_gfIsDownloadUrl(window.location.pathname || window.location.href)) {
             _gfStartDownload(window.location.href);
@@ -193,30 +277,11 @@ DOWNLOAD_INTERCEPT_JS = """
         } catch (_) {}
     }, true);
 
-    // Hide horizontal overflow (matches previous QWebEngineScript behaviour)
+    // Hide horizontal overflow
     document.documentElement.style.overflowX = 'hidden';
     document.body.style.overflowX = 'hidden';
 })();
 """
-
-
-def get_cookies_from_main():
-    """Cookie extractor passed to the download engine."""
-    try:
-        if main_window:
-            cookies = main_window.get_cookies()
-            result = []
-            if cookies:
-                for c in cookies:
-                    result.append({
-                        "name": getattr(c, "name", "") or c.get("name", ""),
-                        "value": getattr(c, "value", "") or c.get("value", ""),
-                        "domain": getattr(c, "domain", "") or c.get("domain", ""),
-                    })
-            return result
-    except Exception as e:
-        print(f"Cookie extraction error: {e}")
-    return []
 
 
 # When False, the main window is showing local setup HTML — do not inject Gameyfin download hooks.
@@ -284,7 +349,7 @@ def main():
 
     data_dir = settings_manager.settings_dir
     umu_db = UmuDatabase()
-    download_engine = DownloadEngine(data_dir, get_cookies_fn=get_cookies_from_main)
+    download_engine = DownloadEngine(data_dir)
 
     bridge = GFBridge(None, None, download_engine, umu_db, on_gameyfin_navigation=set_gameyfin_mode)
 
